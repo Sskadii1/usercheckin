@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 
+# Initialize Flask app
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///leave_management.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -10,6 +11,7 @@ app.secret_key = os.urandom(24)
 
 db = SQLAlchemy(app)
 
+# Database Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
@@ -25,6 +27,7 @@ class LeaveRequest(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     processed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
+# Routes
 @app.route('/')
 def index():
     return render_template('login.html')
@@ -104,12 +107,53 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-with app.app_context():
-    db.create_all()
-    if not User.query.filter_by(username="admin").first():
-        admin = User(username="admin", password=generate_password_hash("admin123"), role="admin")
-        db.session.add(admin)
-        db.session.commit()
+# Serve templates dynamically
+templates = {
+    "login.html": """
+    <form action="{{ url_for('login') }}" method="POST">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+    """,
 
+    "dashboard.html": """
+    <h2>Welcome {{ user.username }}</h2>
+    <h3>Your Leave Requests</h3>
+    <ul>
+        {% for request in leave_requests %}
+            <li>{{ request.reason }} ({{ request.status }}) 
+            {% if request.status == 'Inprogress' %}
+                <a href="{{ url_for('approve_leave', id=request.id) }}">Approve</a> | 
+                <a href="{{ url_for('reject_leave', id=request.id) }}">Reject</a>
+            {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+    <a href="{{ url_for('create_leave') }}">Create Leave Request</a>
+    """,
+
+    "create_leave.html": """
+    <form action="{{ url_for('create_leave') }}" method="POST">
+        <label>Start Date:</label><input type="date" name="start_date" required>
+        <label>End Date:</label><input type="date" name="end_date" required>
+        <label>Reason:</label><textarea name="reason" required></textarea>
+        <button type="submit">Submit</button>
+    </form>
+    """
+}
+
+# Serve templates dynamically
+@app.route('/<template>')
+def serve_template(template):
+    return templates.get(template, "Template not found"), 200, {'Content-Type': 'text/html'}
+
+# Run the app
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()  # Create tables if not exist
+        if not User.query.filter_by(username="admin").first():
+            admin = User(username="admin", password=generate_password_hash("admin123"), role="admin")
+            db.session.add(admin)
+            db.session.commit()
     app.run(debug=True)
